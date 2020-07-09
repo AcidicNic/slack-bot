@@ -3,8 +3,11 @@ package slack
 import (
 	"fmt"
 	"strings"
+	"net/http"
+	"io/ioutil"
 
 	"github.com/slack-go/slack"
+	"github.com/tidwall/gjson"
 )
 
 /*
@@ -12,7 +15,20 @@ import (
    NOTE: command_arg_1 and command_arg_2 represent optional parameteras that you define
    in the Slack API UI
 */
-const helpMessage = "type in '@BOT_NAME <command_arg_1> <command_arg_2>'"
+const helpMessage = "Hey guy, wondering what commands I can understand?\n\n*Get Random r/ProgrammerHumor Post:*\n\t_@boi <rp/random post/reddit>_\n\n*You can also try:*\n\t_Saying hello or saying you love me_"
+
+const rand_reddit_url = "https://www.reddit.com/r/ProgrammerHumor/random/.json"
+
+// Global slices!
+func getHello() []string {
+	return []string{"hey", "hello", "hi", "yo"}
+}
+func getLove() []string {
+	return []string{"i love you", "<3", "ily", "love you", "i love u", "love u"}
+}
+func getReddit() []string {
+	return []string{"rand post", "rand", "random", "rp", "random post", "randpost", "random post", "reddit"}
+}
 
 /*
    CreateSlackClient sets up the slack RTM (real-timemessaging) client library,
@@ -74,13 +90,65 @@ func sendHelp(slackClient *slack.RTM, message, slackChannel string) {
 func sendResponse(slackClient *slack.RTM, message, slackChannel string) {
 	command := strings.ToLower(message)
 	println("[RECEIVED] sendResponse:", command)
-
 	// START SLACKBOT CUSTOM CODE
 	// ===============================================================
-	// TODO:
-	//      1. Implement sendResponse for one or more of your custom Slackbot commands.
-	//         You could call an external API here, or create your own string response. Anything goes!
-	//      2. STRETCH: Write a goroutine that calls an external API based on the data received in this function.
+	response := ""
+	if contains(command, getHello()) {
+		response = "Hey pal!"
+	}
+	if contains(command, getLove()) {
+		response = "I love you too!"
+	}
+	if contains(command, getReddit()) {
+		data, err := getRedditPost()
+		if err != nil {
+			response = "Oops, something went wrong! Try again."
+		} else {
+			title := gjson.Get(data, "0.data.children.0.data.title").String()
+			text := gjson.Get(data, "0.data.children.0.data.selftext").String()
+			postUrl := "www.reddit.com" + gjson.Get(data, "0.data.children.0.data.permalink").String()
+
+			// if [text post], else [image post]
+			if text != "" {
+				response = fmt.Sprintf("*Random r/ProgrammerHumor post:*\n%s\n```%s```\n> source: %s", title, text, postUrl)
+			} else {
+				imgUrl := gjson.Get(data, "0.data.children.0.data.url").String()
+				response = fmt.Sprintf("*Random r/ProgrammerHumor post:*\n*_<%s|%s>_*\n> source: %s", imgUrl, title, postUrl)
+			}
+		}
+	}
+
+	if response != "" {
+		slackClient.SendMessage(slackClient.NewOutgoingMessage(response, slackChannel))
+	}
 	// ===============================================================
 	// END SLACKBOT CUSTOM CODE
+}
+
+// Helper func to check if string slice "list" contains the string "msg"!
+func contains(msg string, list []string) bool {
+   for _, item := range list {
+      if item == msg {
+         return true
+      }
+   }
+   return false
+}
+
+func getRedditPost() (string, error) {
+    req, err := http.NewRequest("GET", "https://www.reddit.com/r/ProgrammerHumor/random/.json", nil)
+    if err != nil {
+        return "", fmt.Errorf("")
+    }
+    req.Header.Set("User-agent", "boi the Slack Bot")
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return "", fmt.Errorf("")
+    }
+    defer resp.Body.Close()
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        return "", fmt.Errorf("")
+    }
+    return string(body), nil
 }
